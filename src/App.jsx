@@ -2,42 +2,49 @@ import { useEffect, useState } from 'react'
 
 const API = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
-function useAuth() {
+function App() {
   const [token, setToken] = useState(null)
   const [user, setUser] = useState(null)
-
-  async function login(email, password) {
-    const res = await fetch(`${API}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    })
-    if (!res.ok) throw new Error('Invalid credentials')
-    const data = await res.json()
-    setToken(data.access_token)
-    setUser(data.user)
-  }
-
-  return { token, user, login }
-}
-
-function App() {
-  const { token, user, login } = useAuth()
-  const [email, setEmail] = useState('client@saasoty.io')
-  const [password, setPassword] = useState('password123')
   const [requirements, setRequirements] = useState([])
   const [newReq, setNewReq] = useState({ type: 'hardware', subtype: '', details: {} })
   const [message, setMessage] = useState('')
 
-  useEffect(() => {
-    // Try to seed demo users
-    fetch(`${API}/seed`, { method: 'POST' }).catch(() => {})
-  }, [])
+  // Role selection instead of email/password
+  const roles = [
+    { key: 'client', label: 'Client' },
+    { key: 'ae', label: 'AE' },
+    { key: 'verifier', label: 'Verifier' },
+    { key: 'admin', label: 'Admin' },
+  ]
 
-  async function loadMyRequirements() {
+  async function impersonate(role) {
+    try {
+      const res = await fetch(`${API}/auth/impersonate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role })
+      })
+      if (!res.ok) {
+        const t = await res.text()
+        throw new Error(t || 'Failed to sign in')
+      }
+      const data = await res.json()
+      setToken(data.access_token)
+      setUser(data.user)
+      setMessage('')
+      // Preload relevant lists
+      loadMyRequirements(data.access_token)
+    } catch (e) {
+      setMessage(String(e.message || e))
+    }
+  }
+
+  async function loadMyRequirements(tok = token) {
+    if (!tok) return
     const res = await fetch(`${API}/requirements`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { Authorization: `Bearer ${tok}` },
     })
+    if (!res.ok) return
     const data = await res.json()
     setRequirements(data)
   }
@@ -68,16 +75,13 @@ function App() {
         <h1 className="text-2xl font-bold text-slate-900">SaaSOTY v1</h1>
         {!token ? (
           <div className="mt-6 grid gap-3">
-            <p className="text-slate-600">Quick sign-in with demo accounts (seeded automatically):</p>
-            <div className="flex gap-2">
-              <button className="px-3 py-2 bg-blue-600 text-white rounded" onClick={() => { setEmail('client@saasoty.io'); setPassword('password123') }}>Client</button>
-              <button className="px-3 py-2 bg-emerald-600 text-white rounded" onClick={() => { setEmail('ae@saasoty.io'); setPassword('password123') }}>AE</button>
-              <button className="px-3 py-2 bg-amber-600 text-white rounded" onClick={() => { setEmail('verifier@saasoty.io'); setPassword('password123') }}>Verifier</button>
-            </div>
-            <div className="flex gap-2">
-              <input className="border rounded px-3 py-2 w-64" value={email} onChange={e=>setEmail(e.target.value)} placeholder="email" />
-              <input className="border rounded px-3 py-2 w-64" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="password" />
-              <button className="px-4 py-2 bg-slate-900 text-white rounded" onClick={() => login(email, password).catch(e=>setMessage(e.message))}>Sign in</button>
+            <p className="text-slate-600">Choose a role to continue:</p>
+            <div className="flex flex-wrap gap-2">
+              {roles.map(r => (
+                <button key={r.key} className="px-4 py-2 rounded bg-slate-900 text-white" onClick={() => impersonate(r.key)}>
+                  {r.label}
+                </button>
+              ))}
             </div>
             {message && <p className="text-red-600 text-sm">{message}</p>}
           </div>
@@ -88,7 +92,10 @@ function App() {
                 <p className="text-slate-700">Signed in as</p>
                 <p className="font-medium">{user?.name || user?.email} · {user?.role}</p>
               </div>
-              <button className="text-sm text-blue-600 underline" onClick={loadMyRequirements}>Refresh</button>
+              <div className="flex items-center gap-3">
+                <button className="text-sm text-blue-600 underline" onClick={() => loadMyRequirements()}>Refresh</button>
+                <button className="text-sm text-slate-600 underline" onClick={() => { setToken(null); setUser(null); setRequirements([]) }}>Sign out</button>
+              </div>
             </div>
 
             {user?.role === 'client' && (
