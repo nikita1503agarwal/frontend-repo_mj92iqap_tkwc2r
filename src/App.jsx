@@ -17,6 +17,24 @@ function App() {
     { key: 'admin', label: 'Admin' },
   ]
 
+  async function seedSamples(tok) {
+    try {
+      const res = await fetch(`${API}/debug/seed-samples`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${tok}` },
+      })
+      if (!res.ok) {
+        // don't block sign-in if seeding fails
+        const t = await res.text()
+        console.warn('Seeding failed:', t)
+        return
+      }
+      return await res.json()
+    } catch (e) {
+      console.warn('Seeding error', e)
+    }
+  }
+
   async function impersonate(role) {
     try {
       const res = await fetch(`${API}/auth/impersonate`, {
@@ -32,7 +50,8 @@ function App() {
       setToken(data.access_token)
       setUser(data.user)
       setMessage('')
-      // Preload relevant lists
+      // Seed role-relevant demo data, then preload lists
+      await seedSamples(data.access_token)
       loadMyRequirements(data.access_token)
     } catch (e) {
       setMessage(String(e.message || e))
